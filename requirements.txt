@@ -1,8 +1,9 @@
 streamlit
+ultralytics
+tensorflow==2.17.0
 numpy
 pandas
 opencv-python-headless
 scikit-learn
-tensorflow==2.17.0
 matplotlib
 Pillow
