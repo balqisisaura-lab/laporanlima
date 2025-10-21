@@ -1,9 +1,6 @@
 streamlit
-ultralytics==8.2.50
-tensorflow==2.17.0
-numpy
-pandas
+tensorflow==2.15.0
+ultralytics
+pillow
 opencv-python-headless
-scikit-learn
-matplotlib
-Pillow
+numpy
