@@ -1,75 +1,136 @@
 import streamlit as st
-from ultralytics import YOLO
 import tensorflow as tf
 import numpy as np
 from PIL import Image
-import os
+from tensorflow.keras.applications.resnet50 import preprocess_input
 
-# ==========================
-# Load Models
-# ==========================
+# ==============================
+# Konfigurasi Halaman
+# ==============================
+st.set_page_config(
+    page_title="AI Vision Dashboard",
+    page_icon="🤖",
+    layout="wide"
+)
+
+# ==============================
+# Styling Keren (Tema Teknologi)
+# ==============================
+st.markdown("""
+    <style>
+        body {
+            background-color: #0b0f19;
+            color: #FFFFFF;
+        }
+        .title {
+            text-align: center;
+            font-size: 40px;
+            color: #00FFFF;
+            font-weight: bold;
+        }
+        .subtitle {
+            text-align: center;
+            font-size: 18px;
+            color: #7FFFD4;
+        }
+        .stButton>button {
+            background: linear-gradient(90deg, #00FFFF, #007BFF);
+            color: white;
+            border-radius: 12px;
+            font-weight: bold;
+            height: 3em;
+            width: 100%;
+            border: none;
+            box-shadow: 0px 0px 20px #00FFFF;
+        }
+        .stButton>button:hover {
+            background: linear-gradient(90deg, #007BFF, #00FFFF);
+            transform: scale(1.02);
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# ==============================
+# Header Dashboard
+# ==============================
+st.markdown("<h1 class='title'>🚀 AI Vision Dashboard</h1>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle'>Upload gambar untuk diklasifikasi menggunakan model ResNet50</p>", unsafe_allow_html=True)
+st.markdown("---")
+
+# ==============================
+# Fungsi Load Model
+# ==============================
 @st.cache_resource
-def load_models():
-    yolo_path = "model/object.pt"
-    class_path = "model/class.h5"
+def load_model():
+    try:
+        model = tf.keras.models.load_model("model/object.pt", compile=False)
+        st.success("✅ Model berhasil dimuat!")
+        return model
+    except Exception as e:
+        st.error(f"⚠️ Gagal memuat model TensorFlow: {e}")
+        return None
 
-    if not os.path.exists(yolo_path):
-        st.error("❌ File YOLO tidak ditemukan di folder model/. Pastikan 'object.pt' sudah di-upload.")
-        return None, None
+model = load_model()
 
-    if not os.path.exists(class_path):
-        st.error("❌ File model klasifikasi tidak ditemukan di folder model/. Pastikan 'class.h5' sudah di-upload.")
-        return None, None
+# ==============================
+# Fungsi Prediksi
+# ==============================
+def predict_image(img, model):
+    try:
+        # 1️⃣ Ubah ukuran gambar ke 224x224
+        img = img.resize((224, 224))
+        img_array = np.array(img)
 
-    # Load YOLO dan model klasifikasi
-    yolo_model = YOLO(yolo_path)
-    classifier = tf.keras.models.load_model(class_path, compile=False)
-    return yolo_model, classifier
+        # 2️⃣ Tambah dimensi batch
+        img_array = np.expand_dims(img_array, axis=0)  # (1, 224, 224, 3)
+        img_array = preprocess_input(img_array)
 
+        # 3️⃣ Ambil fitur dari ResNet base (layer pertama)
+        resnet_output = model.layers[0](img_array)
+        pooled_features = tf.keras.layers.GlobalAveragePooling2D()(resnet_output)
 
-yolo_model, classifier = load_models()
+        # 4️⃣ Pastikan fitur berbentuk (1, 2048)
+        pooled_features = np.expand_dims(pooled_features.numpy().flatten(), axis=0)
 
-# ==========================
-# UI
-# ==========================
-st.title("🧠 Image Classification & Object Detection App")
+        # 5️⃣ Prediksi akhir
+        prediction = model.predict(pooled_features)
+        return prediction
 
-if yolo_model is not None and classifier is not None:
-    menu = st.sidebar.selectbox(
-        "Pilih Mode:",
-        ["Deteksi Objek (YOLO)", "Klasifikasi Gambar"]
-    )
+    except Exception as e:
+        st.error(f"⚠️ Error saat prediksi: {e}")
+        return None
 
-    uploaded_file = st.file_uploader("Unggah Gambar", type=["jpg", "jpeg", "png"])
+# ==============================
+# Upload Gambar
+# ==============================
+uploaded_file = st.file_uploader("📂 Upload gambar (JPG/PNG)", type=["jpg", "jpeg", "png"])
 
-    if uploaded_file is not None:
-        img = Image.open(uploaded_file).convert("RGB")  # pastikan RGB
-        st.image(img, caption="Gambar yang Diupload", use_container_width=True)
+if uploaded_file is not None:
+    img = Image.open(uploaded_file).convert("RGB")
 
-        if menu == "Deteksi Objek (YOLO)":
-            # Deteksi objek menggunakan YOLO
-            results = yolo_model(img)
-            result_img = results[0].plot()  # hasil deteksi (gambar dengan box)
-            st.image(result_img, caption="Hasil Deteksi", use_container_width=True)
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        st.image(img, caption="🖼️ Gambar Diupload", use_container_width=True)
 
-        elif menu == "Klasifikasi Gambar":
-            # ==========================
-            # Preprocessing Gambar
-            # ==========================
-            img_resized = img.resize((224, 224))  # sesuaikan ukuran input model
-            img_array = np.array(img_resized).astype("float32")
-            img_array = np.expand_dims(img_array, axis=0)
-            img_array = img_array / 255.0  # normalisasi
+    with col2:
+        if st.button("🔍 Jalankan Prediksi"):
+            with st.spinner("Model sedang menganalisis gambar... ⏳"):
+                result = predict_image(img, model)
 
-            # ==========================
-            # Prediksi
-            # ==========================
-            prediction = classifier.predict(img_array)
-            class_index = int(np.argmax(prediction))
-            confidence = float(np.max(prediction))
-
-            st.success(f"### Hasil Prediksi: {class_index}")
-            st.write("Probabilitas:", round(confidence * 100, 2), "%")
-
+            if result is not None:
+                st.success("✅ Prediksi Berhasil!")
+                st.write("**Output Probabilitas:**")
+                st.dataframe(result)
+            else:
+                st.error("❌ Prediksi gagal. Coba ulangi atau periksa model.")
 else:
-    st.warning("⚠️ Model belum dimuat karena file model tidak ditemukan di folder `model/`.")
+    st.info("⬆️ Silakan upload gambar untuk memulai prediksi.")
+
+# ==============================
+# Footer
+# ==============================
+st.markdown("---")
+st.markdown(
+    "<p style='text-align:center; color:gray;'>© 2025 AI Vision Dashboard — Powered by TensorFlow & Streamlit</p>",
+    unsafe_allow_html=True
+)
